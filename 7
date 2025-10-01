@@ -6,43 +6,54 @@ import { RelatoriosPage } from './pages/Relatorios';
 import { PerfilPage } from './pages/Perfil';
 import { SharedLayout } from './components/SharedLayout';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const { session, user, isLoading } = useAuth();
+  const { session, user, isLoading, logout } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-10 w-10 animate-spin" />
-      </div>
-    );
+  const Loader = () => (
+    <div className="flex items-center justify-center h-screen">
+      <Loader2 className="h-10 w-10 animate-spin" />
+    </div>
+  );
+
+  useEffect(() => {
+    // This effect handles the critical case where loading is done, we have a session,
+    // but no user profile could be fetched. This indicates a data inconsistency.
+    // To prevent getting stuck on a loader, we log the user out to reset the state.
+    if (!isLoading && session && !user) {
+      toast.error("Falha ao carregar perfil. Desconectando para segurança.");
+      logout();
+    }
+  }, [isLoading, session, user, logout]);
+
+  if (isLoading || (session && !user)) {
+    // Show loader if:
+    // 1. We are in the initial loading state.
+    // 2. We have a session but are waiting for the user profile (or logging out due to failure).
+    return <Loader />;
   }
 
-  if (!session || !user) {
-    return <Navigate to="/login" />;
+  if (!session) {
+    // If not loading and no session, redirect to login.
+    return <Navigate to="/login" replace />;
   }
   
+  // At this point, we have a session and a user profile.
+  // Now check for approval.
   if (!user.is_approved && !user.is_admin) {
-     return <Navigate to="/login?status=pending_approval" />;
+     return <Navigate to="/login?status=pending_approval" replace />;
   }
 
   return children;
 };
 
 function AppRoutes() {
-  const { isLoading, session } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-10 w-10 animate-spin" />
-      </div>
-    );
-  }
+  const { session } = useAuth();
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/" /> : <LoginPage />} />
+      <Route path="/login" element={session ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route 
         element={
           <ProtectedRoute>
@@ -53,9 +64,9 @@ function AppRoutes() {
         <Route path="/renomeador" element={<RenomeadorPage />} />
         <Route path="/relatorios" element={<RelatoriosPage />} />
         <Route path="/perfil" element={<PerfilPage />} />
-        <Route path="/" element={<Navigate to="/renomeador" />} />
+        <Route path="/" element={<Navigate to="/renomeador" replace />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
