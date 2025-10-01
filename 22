@@ -1,0 +1,302 @@
+import { useState } from 'react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Calendar } from "@/components/ui/calendar"
+import {
+  MoreHorizontal,
+  FileDown,
+  FileText,
+  MessageSquareQuote,
+  Trash2,
+  Share2,
+  Pencil,
+  Calendar as CalendarIcon,
+  Download,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
+import { cn } from "@/lib/utils"
+
+type Registro = {
+  id: number;
+  tipo: 'DANFE' | 'Serviço';
+  nome: string;
+  numeroNota: string;
+  natureza: string;
+  cnpj: string;
+  dataEmissao: string;
+  valorTotal: number;
+  pedido?: string;
+  vencimento?: string;
+  cfop?: string;
+  usuario: string;
+  dataRegistro: string;
+  comentario?: string;
+};
+
+const mockRegistros: Registro[] = [
+  {
+    id: 1,
+    tipo: 'DANFE',
+    nome: 'Comercio de Maquinas Pirabeiraba Ltda',
+    numeroNota: '000.040.482',
+    natureza: 'Venda de mercadoria',
+    cnpj: '12.345.678/0001-99',
+    dataEmissao: '2025-10-26T10:00:00Z',
+    valorTotal: 123.00,
+    vencimento: '2025-11-13',
+    cfop: '5102',
+    usuario: 'admin@renomeador.com',
+    dataRegistro: '2025-10-26T14:00:00Z',
+  },
+  {
+    id: 2,
+    tipo: 'Serviço',
+    nome: 'Consultoria Tech Ltda',
+    numeroNota: '000040482',
+    natureza: '1701 - Análise de sistemas',
+    cnpj: '98.765.432/0001-11',
+    dataEmissao: '2025-10-25T11:30:00Z',
+    valorTotal: 120.00,
+    vencimento: '2025-10-10',
+    usuario: 'user@renomeador.com',
+    dataRegistro: '2025-10-25T15:00:00Z',
+    comentario: 'Serviço de consultoria para o projeto X.'
+  },
+];
+
+export function RelatoriosPage() {
+    const [registros, setRegistros] = useState<Registro[]>(mockRegistros);
+    const [editingRecord, setEditingRecord] = useState<Registro | null>(null);
+    const [commentingRecord, setCommentingRecord] = useState<Registro | null>(null);
+    const [date, setDate] = useState<Date | undefined>(new Date());
+
+    const handleShare = (registro: Registro) => {
+        const message = `🧾 *Resumo da Nota Fiscal* 🧾%0A%0A*Tipo:* ${registro.tipo}%0A*Emitente:* ${registro.nome}%0A*Nº Nota:* ${registro.numeroNota}%0A*Valor:* ${registro.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}%0A*Vencimento:* ${registro.vencimento ? format(new Date(registro.vencimento), 'dd/MM/yyyy') : 'N/A'}%0A%0A*Registrado por:* ${registro.usuario} em ${format(new Date(registro.dataRegistro), 'dd/MM/yyyy HH:mm')}`;
+        const whatsappUrl = `https://api.whatsapp.com/send?text=${message}`;
+        window.open(whatsappUrl, '_blank');
+        toast.success('Resumo pronto para ser compartilhado no WhatsApp!');
+    };
+
+    const handleSaveComment = (id: number, comentario: string) => {
+        setRegistros(registros.map(r => r.id === id ? { ...r, comentario } : r));
+        setCommentingRecord(null);
+        toast.success('Comentário salvo com sucesso!');
+    }
+    
+    const handleSaveEdit = (registro: Registro) => {
+        setRegistros(registros.map(r => r.id === registro.id ? registro : r));
+        setEditingRecord(null);
+        toast.success('Registro atualizado com sucesso!');
+    }
+
+    return (
+        <div className="flex-1 space-y-4">
+            <div className="flex items-center justify-between space-y-2">
+                <h2 className="text-3xl font-bold tracking-tight">Relatórios</h2>
+                <div className="flex items-center space-x-2">
+                    <Button variant="outline" onClick={() => toast.info('Gerando relatório em PDF...')}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Relatório PDF
+                    </Button>
+                    <Button variant="outline" onClick={() => toast.info('Gerando relatório em XLS...')}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Relatório XLS
+                    </Button>
+                    <Button variant="outline" onClick={() => toast.info('Gerando resumo para WhatsApp...')}>
+                        <Share2 className="mr-2 h-4 w-4" />
+                        Relatório WhatsApp
+                    </Button>
+                </div>
+            </div>
+
+            <div className="p-6 border rounded-lg bg-card">
+                <div className="flex items-center space-x-4 mb-6">
+                    <Input placeholder="Buscar por nome ou CNPJ..." className="max-w-xs" />
+                     <Popover>
+                        <PopoverTrigger asChild>
+                        <Button
+                            variant={"outline"}
+                            className={cn(
+                            "w-[240px] justify-start text-left font-normal",
+                            !date && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione a data</span>}
+                        </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            mode="single"
+                            selected={date}
+                            onSelect={setDate}
+                            initialFocus
+                        />
+                        </PopoverContent>
+                    </Popover>
+                    <Select>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Tipo de Nota" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="danfe">DANFE</SelectItem>
+                            <SelectItem value="servico">Serviço</SelectItem>
+                        </SelectContent>
+                    </Select>
+                     <Button>Filtrar</Button>
+                </div>
+
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Nome/Emitente</TableHead>
+                            <TableHead>Nº Nota</TableHead>
+                            <TableHead>Valor</TableHead>
+                            <TableHead>Vencimento</TableHead>
+                            <TableHead>Usuário</TableHead>
+                            <TableHead><span className="sr-only">Ações</span></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {registros.map((registro) => (
+                            <TableRow key={registro.id}>
+                                <TableCell>{registro.tipo}</TableCell>
+                                <TableCell className="font-medium">{registro.nome}</TableCell>
+                                <TableCell>{registro.numeroNota}</TableCell>
+                                <TableCell>{registro.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                <TableCell>{registro.vencimento ? format(new Date(registro.vencimento), 'dd/MM/yyyy') : 'N/A'}</TableCell>
+                                <TableCell>{registro.usuario}</TableCell>
+                                <TableCell>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                                <span className="sr-only">Abrir menu</span>
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                            <DropdownMenuItem onClick={() => setEditingRecord(registro)}>
+                                                <Pencil className="mr-2 h-4 w-4" /> Editar
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setCommentingRecord(registro)}>
+                                                <MessageSquareQuote className="mr-2 h-4 w-4" /> Comentar
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleShare(registro)}>
+                                                <Share2 className="mr-2 h-4 w-4" /> Compartilhar
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem className="text-red-500" onClick={() => toast.error(`Registro ${registro.id} excluído.`)}>
+                                                <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
+
+            {/* Edit Modal */}
+            <Dialog open={!!editingRecord} onOpenChange={(open) => !open && setEditingRecord(null)}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Editar Registro</DialogTitle>
+                        <DialogDescription>
+                            Faça alterações no registro aqui. Clique em salvar quando terminar.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {editingRecord && (
+                        <div className="grid gap-4 py-4">
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="nome" className="text-right">Nome</Label>
+                                <Input id="nome" defaultValue={editingRecord.nome} className="col-span-3" />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="valor" className="text-right">Valor</Label>
+                                <Input id="valor" type="number" defaultValue={editingRecord.valorTotal} className="col-span-3" />
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <DialogClose asChild>
+                            <Button variant="outline">Cancelar</Button>
+                        </DialogClose>
+                        <Button onClick={() => editingRecord && handleSaveEdit(editingRecord)}>Salvar Alterações</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Comment Modal */}
+            <Dialog open={!!commentingRecord} onOpenChange={(open) => !open && setCommentingRecord(null)}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Adicionar Comentário</DialogTitle>
+                        <DialogDescription>
+                            Adicione uma observação para o registro de {commentingRecord?.nome}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {commentingRecord && (
+                        <div className="grid gap-4 py-4">
+                            <Textarea
+                                id="comentario"
+                                placeholder="Digite seu comentário aqui..."
+                                defaultValue={commentingRecord.comentario}
+                                className="col-span-4"
+                            />
+                        </div>
+                    )}
+                    <DialogFooter>
+                         <DialogClose asChild>
+                            <Button variant="outline">Cancelar</Button>
+                        </DialogClose>
+                        <Button onClick={() => commentingRecord && handleSaveComment(commentingRecord.id, (document.getElementById('comentario') as HTMLTextAreaElement).value)}>Salvar Comentário</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}

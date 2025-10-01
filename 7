@@ -1,0 +1,45 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LoginPage } from './pages/Login';
+import { RenomeadorPage } from './pages/Renomeador';
+import { RelatoriosPage } from './pages/Relatorios';
+import { PerfilPage } from './pages/Perfil';
+import { SharedLayout } from './components/SharedLayout';
+
+const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? children : <Navigate to="/login" />;
+};
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route 
+        element={
+          <ProtectedRoute>
+            <SharedLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/renomeador" element={<RenomeadorPage />} />
+        <Route path="/relatorios" element={<RelatoriosPage />} />
+        <Route path="/perfil" element={<PerfilPage />} />
+        <Route path="/" element={<Navigate to="/renomeador" />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </Router>
+  );
+}
+
+export default App;

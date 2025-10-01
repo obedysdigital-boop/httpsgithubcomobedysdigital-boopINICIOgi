@@ -1,0 +1,63 @@
+import React, { createContext, useState, useContext, ReactNode } from 'react';
+import { toast } from 'sonner';
+
+interface User {
+  name: string;
+  email: string;
+  isAdmin: boolean;
+}
+
+interface AuthContextType {
+  isAuthenticated: boolean;
+  user: User | null;
+  login: (email: string, pass: string) => Promise<void>;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  const login = async (email: string, pass: string) => {
+    return new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        if (email === 'obedysdigital@gmail.com' && pass === 'junio2019') {
+          setIsAuthenticated(true);
+          setUser({ name: 'Obedys Digital', email: email, isAdmin: true });
+          resolve();
+        } else {
+          // Mocking a regular user login for demonstration
+          if (email.includes('@')) {
+             setIsAuthenticated(true);
+             setUser({ name: 'Usuário Padrão', email: email, isAdmin: false });
+             resolve();
+          } else {
+            toast.error('Credenciais inválidas.');
+            reject(new Error('Credenciais inválidas'));
+          }
+        }
+      }, 1000);
+    });
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

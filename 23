@@ -1,0 +1,99 @@
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+    CardFooter
+} from "@/components/ui/card";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+
+const mockUsers = [
+    { id: 'usr_1', email: 'novo.usuario@example.com', requestedAt: '2025-10-27', status: 'Pendente' },
+    { id: 'usr_2', email: 'outro.user@company.com', requestedAt: '2025-10-26', status: 'Pendente' },
+    { id: 'usr_3', email: 'aprovado@test.com', requestedAt: '2025-10-25', status: 'Aprovado' },
+];
+
+export function PerfilPage() {
+    return (
+        <div className="grid gap-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Gerenciamento de Usuários</CardTitle>
+                    <CardDescription>Aprove ou rejeite o acesso de novos usuários ao sistema.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Email</TableHead>
+                                <TableHead>Data da Solicitação</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {mockUsers.map(user => (
+                                <TableRow key={user.id}>
+                                    <TableCell className="font-medium">{user.email}</TableCell>
+                                    <TableCell>{new Date(user.requestedAt).toLocaleDateString('pt-BR')}</TableCell>
+                                    <TableCell>
+                                        <Badge variant={user.status === 'Pendente' ? 'destructive' : 'default'}>
+                                            {user.status}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        {user.status === 'Pendente' && (
+                                            <div className="flex gap-2 justify-end">
+                                                <Button size="sm" variant="outline" onClick={() => toast.error(`Acesso de ${user.email} rejeitado.`)}>Rejeitar</Button>
+                                                <Button size="sm" onClick={() => toast.success(`Acesso de ${user.email} aprovado!`)}>Aprovar</Button>
+                                            </div>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Configurações do Perfil</CardTitle>
+                    <CardDescription>Gerencie suas preferências e configurações de conta.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                            <Label htmlFor="notifications-email">Notificações por Email</Label>
+                            <p className="text-sm text-muted-foreground">Receba alertas sobre novos usuários e relatórios semanais.</p>
+                        </div>
+                        <Switch id="notifications-email" defaultChecked />
+                    </div>
+                     <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                            <Label htmlFor="notifications-push">Notificações Push</Label>
+                            <p className="text-sm text-muted-foreground">Receba notificações em tempo real no seu navegador.</p>
+                        </div>
+                        <Switch id="notifications-push" />
+                    </div>
+                </CardContent>
+                <CardFooter className="border-t px-6 py-4">
+                    <Button>Salvar Preferências</Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+}

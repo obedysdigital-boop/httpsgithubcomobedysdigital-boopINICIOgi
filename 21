@@ -1,0 +1,201 @@
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  FileText,
+  LineChart,
+  User,
+  PanelLeft,
+  Search,
+  LogOut,
+  Settings,
+  Moon,
+  Sun,
+} from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from './ThemeProvider';
+import { cn } from '@/lib/utils';
+
+const navItems = [
+  { to: '/renomeador', icon: FileText, label: 'Renomeador' },
+  { to: '/relatorios', icon: LineChart, label: 'Relatórios' },
+];
+
+const adminNavItem = { to: '/perfil', icon: User, label: 'Perfil' };
+
+export function SharedLayout() {
+  const location = useLocation();
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
+
+  const handleLogout = () => {
+    auth.logout();
+    navigate('/login');
+  };
+
+  const NavLink = ({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) => {
+    const isActive = location.pathname.startsWith(to);
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to={to}
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8',
+                isActive && 'bg-accent text-accent-foreground'
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="sr-only">{label}</span>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
+  return (
+    <div className="flex min-h-screen w-full flex-col bg-muted/40">
+      <aside className="fixed inset-y-0 left-0 z-10 hidden w-14 flex-col border-r bg-background sm:flex">
+        <nav className="flex flex-col items-center gap-4 px-2 sm:py-5">
+          <Link
+            to="#"
+            className="group flex h-9 w-9 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:h-8 md:w-8 md:text-base"
+          >
+            <FileText className="h-4 w-4 transition-all group-hover:scale-110" />
+            <span className="sr-only">Renomeador NF</span>
+          </Link>
+          {navItems.map((item) => (
+            <NavLink key={item.to} {...item} />
+          ))}
+          {auth.user?.isAdmin && <NavLink {...adminNavItem} />}
+        </nav>
+        <nav className="mt-auto flex flex-col items-center gap-4 px-2 sm:py-5">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  to="#"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8"
+                >
+                  <Settings className="h-5 w-5" />
+                  <span className="sr-only">Configurações</span>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">Configurações</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </nav>
+      </aside>
+      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button size="icon" variant="outline" className="sm:hidden">
+                <PanelLeft className="h-5 w-5" />
+                <span className="sr-only">Abrir menu</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="sm:max-w-xs">
+              <nav className="grid gap-6 text-lg font-medium">
+                <Link
+                  to="#"
+                  className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
+                >
+                  <FileText className="h-5 w-5 transition-all group-hover:scale-110" />
+                  <span className="sr-only">Renomeador NF</span>
+                </Link>
+                {navItems.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      'flex items-center gap-4 px-2.5 text-muted-foreground hover:text-foreground',
+                      location.pathname.startsWith(item.to) && 'text-foreground'
+                    )}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.label}
+                  </Link>
+                ))}
+                {auth.user?.isAdmin && (
+                   <Link
+                    to={adminNavItem.to}
+                    className={cn(
+                      'flex items-center gap-4 px-2.5 text-muted-foreground hover:text-foreground',
+                      location.pathname.startsWith(adminNavItem.to) && 'text-foreground'
+                    )}
+                  >
+                    <adminNavItem.icon className="h-5 w-5" />
+                    {adminNavItem.label}
+                  </Link>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
+          <div className="relative ml-auto flex-1 md:grow-0">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar..."
+              className="w-full rounded-lg bg-background pl-8 md:w-[200px] lg:w-[320px]"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Alterar tema</span>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="overflow-hidden rounded-full"
+              >
+                <User />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{auth.user?.name || 'Minha Conta'}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {auth.user?.isAdmin && <DropdownMenuItem onClick={() => navigate('/perfil')}>Perfil</DropdownMenuItem>}
+              <DropdownMenuItem>Configurações</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+        <main className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
