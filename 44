@@ -1,0 +1,130 @@
+/*
+# [Initial Schema Setup with Fix]
+This script creates the necessary tables (`profiles`, `notas_fiscais`) for the application, sets up security policies, and includes a fix for the `ON CONFLICT` error by adding a UNIQUE constraint to the email column in the profiles table.
+
+## Query Description: "This operation will create the core database structure for users and invoices. It is safe to run on a new database. If you ran the previous script and it failed, please delete the 'profiles' and 'notas_fiscais' tables before running this one to ensure a clean setup."
+
+## Metadata:
+- Schema-Category: "Structural"
+- Impact-Level: "High"
+- Requires-Backup: false
+- Reversible: false
+
+## Structure Details:
+- Creates table `public.profiles` to store user data.
+- Creates table `public.notas_fiscais` to store invoice data.
+- Adds a UNIQUE constraint on `profiles.email`.
+- Creates a trigger to automatically create a profile for new users.
+
+## Security Implications:
+- RLS Status: Enabled
+- Policy Changes: Yes
+- Auth Requirements: Policies are based on the authenticated user's ID.
+
+## Performance Impact:
+- Indexes: Primary keys and foreign keys are indexed.
+- Triggers: One trigger on `auth.users` after insert.
+- Estimated Impact: Low on a new database.
+*/
+
+-- 1. PROFILES TABLE
+-- Stores public user data.
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE, -- <<< FIX: Added UNIQUE constraint
+  is_admin BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+COMMENT ON TABLE public.profiles IS 'Stores public user data, linked to auth.users.';
+
+-- 2. NOTAS FISCAIS TABLE
+-- Stores data extracted from invoices.
+CREATE TABLE IF NOT EXISTS public.notas_fiscais (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  tipo TEXT, -- 'DANFE' ou 'Serviço'
+  nome_emitente TEXT,
+  numero_nota TEXT,
+  natureza_operacao TEXT,
+  cnpj TEXT,
+  data_emissao TIMESTAMPTZ,
+  valor_total NUMERIC(10, 2),
+  pedido TEXT,
+  vencimento DATE,
+  cfop TEXT,
+  comentario TEXT,
+  nome_arquivo_original TEXT,
+  nome_arquivo_novo TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+COMMENT ON TABLE public.notas_fiscais IS 'Stores data extracted from processed invoices.';
+
+-- 3. ROW LEVEL SECURITY (RLS)
+-- Enable RLS for both tables
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notas_fiscais ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can see their own profile.
+CREATE POLICY "Users can view their own profile."
+ON public.profiles FOR SELECT
+USING (auth.uid() = id);
+
+-- Policy: Users can update their own profile.
+CREATE POLICY "Users can update their own profile."
+ON public.profiles FOR UPDATE
+USING (auth.uid() = id);
+
+-- Policy: Admins can see all profiles.
+CREATE POLICY "Admins can view all profiles."
+ON public.profiles FOR SELECT
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- Policy: Admins can update all profiles.
+CREATE POLICY "Admins can update all profiles."
+ON public.profiles FOR UPDATE
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- Policy: Users can manage their own invoices.
+CREATE POLICY "Users can manage their own invoices."
+ON public.notas_fiscais FOR ALL
+USING (auth.uid() = user_id);
+
+-- Policy: Admins can manage all invoices.
+CREATE POLICY "Admins can manage all invoices."
+ON public.notas_fiscais FOR ALL
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- 4. TRIGGERS AND FUNCTIONS
+-- Function to create a profile when a new user signs up in auth.users
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email)
+  VALUES (new.id, new.email);
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to call the function after a new user is created
+-- Drop the old trigger if it exists, to avoid errors on re-run
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 5. SEED ADMIN USER
+-- This function will find the user with the admin email and set them as admin.
+CREATE OR REPLACE FUNCTION public.set_admin_user()
+RETURNS void AS $$
+BEGIN
+  UPDATE public.profiles
+  SET is_admin = TRUE
+  WHERE email = 'obedysdigital@gmail.com';
+END;
+$$ LANGUAGE plpgsql;

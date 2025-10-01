@@ -1,0 +1,143 @@
+/*
+# [Initial Schema Setup]
+This script sets up the initial database schema for the RENOMEADOR NF application. It creates tables for user profiles and fiscal notes, establishes relationships, and configures security policies.
+
+## Query Description: [This operation will create new tables and security policies. It is safe to run on a new project but could conflict with existing tables if they have the same names. No data will be lost as it only creates new structures.]
+
+## Metadata:
+- Schema-Category: ["Structural"]
+- Impact-Level: ["Medium"]
+- Requires-Backup: [false]
+- Reversible: [true]
+
+## Structure Details:
+- Tables Created: `profiles`, `notas_fiscais`
+- Triggers Created: `on_auth_user_created`
+- Functions Created: `handle_new_user`
+- RLS Policies: Enabled for `profiles` and `notas_fiscais`
+
+## Security Implications:
+- RLS Status: [Enabled]
+- Policy Changes: [Yes]
+- Auth Requirements: [Policies are based on `auth.uid()` and user roles.]
+
+## Performance Impact:
+- Indexes: [Primary keys and foreign keys are indexed by default.]
+- Triggers: [A trigger is added to the `auth.users` table.]
+- Estimated Impact: [Low performance impact, as the trigger only runs on new user creation.]
+*/
+
+-- 1. PROFILES TABLE
+-- Stores public-facing user data and role information.
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT,
+  email TEXT,
+  is_admin BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.profiles IS 'Stores public user information and application-specific roles.';
+COMMENT ON COLUMN public.profiles.is_admin IS 'Determines if the user has administrative privileges.';
+
+-- 2. NOTAS FISCAIS TABLE
+-- Stores all data extracted from the processed fiscal notes (DANFE and Serviço).
+CREATE TABLE public.notas_fiscais (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL, -- 'DANFE' or 'Serviço'
+  nome_emitente TEXT,
+  numero_nota TEXT,
+  natureza_operacao TEXT,
+  cnpj TEXT,
+  data_emissao TIMESTAMPTZ,
+  valor_total NUMERIC,
+  pedido TEXT,
+  vencimento DATE,
+  cfop TEXT,
+  codigo_servico TEXT,
+  comentario TEXT,
+  arquivo_nome_original TEXT,
+  arquivo_nome_novo TEXT,
+  status TEXT NOT NULL DEFAULT 'Pendente', -- 'Pendente', 'Processando', 'Finalizado', 'Erro'
+  data_registro TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.notas_fiscais IS 'Stores data extracted from processed fiscal notes.';
+COMMENT ON COLUMN public.notas_fiscais.tipo IS 'Type of the fiscal note, e.g., DANFE or Serviço.';
+COMMENT ON COLUMN public.notas_fiscais.status IS 'Processing status of the fiscal note file.';
+
+-- 3. RLS (ROW LEVEL SECURITY)
+-- Enable RLS for the tables.
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notas_fiscais ENABLE ROW LEVEL SECURITY;
+
+-- 4. PROFILES RLS POLICIES
+-- Users can see their own profile.
+CREATE POLICY "Allow individual read access"
+ON public.profiles FOR SELECT
+USING (auth.uid() = id);
+
+-- Users can update their own profile.
+CREATE POLICY "Allow individual update access"
+ON public.profiles FOR UPDATE
+USING (auth.uid() = id);
+
+-- Admins can see all profiles.
+CREATE POLICY "Allow admin read access"
+ON public.profiles FOR SELECT
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- Admins can update all profiles.
+CREATE POLICY "Allow admin update access"
+ON public.profiles FOR UPDATE
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- 5. NOTAS FISCAIS RLS POLICIES
+-- Users can manage their own fiscal notes.
+CREATE POLICY "Allow individual access to own notes"
+ON public.notas_fiscais FOR ALL
+USING (auth.uid() = user_id);
+
+-- Admins have full access to all fiscal notes.
+CREATE POLICY "Allow admin full access to all notes"
+ON public.notas_fiscais FOR ALL
+USING (
+  (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = TRUE
+);
+
+-- 6. TRIGGER FOR NEW USER PROFILE
+-- Automatically creates a profile entry when a new user signs up.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name)
+  VALUES (new.id, new.email, new.raw_user_meta_data->>'name');
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 7. SET ADMIN USER
+-- Manually sets the specified user as an admin.
+-- This part is for initial setup. In the app, an admin will manage other users.
+INSERT INTO auth.users (id, email, encrypted_password, role, raw_user_meta_data)
+VALUES ('00000000-0000-0000-0000-000000000001', 'obedysdigital@gmail.com', crypt('junio2019', gen_salt('bf')), 'authenticated', '{"name": "Obedys Digital"}')
+ON CONFLICT (email) DO NOTHING;
+
+-- The trigger will create the profile, now we update it to be an admin
+-- We use a known UUID for the admin user for simplicity in this initial script.
+-- Note: A better approach for production would be to handle this via a secure admin interface or a one-time setup script.
+UPDATE public.profiles
+SET is_admin = TRUE
+WHERE email = 'obedysdigital@gmail.com';

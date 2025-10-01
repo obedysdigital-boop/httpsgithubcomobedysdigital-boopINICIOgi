@@ -5,16 +5,44 @@ import { RenomeadorPage } from './pages/Renomeador';
 import { RelatoriosPage } from './pages/Relatorios';
 import { PerfilPage } from './pages/Perfil';
 import { SharedLayout } from './components/SharedLayout';
+import { Loader2 } from 'lucide-react';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const { isAuthenticated } = useAuth();
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  const { session, user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-10 w-10 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session || !user) {
+    return <Navigate to="/login" />;
+  }
+  
+  if (!user.is_approved && !user.is_admin) {
+     return <Navigate to="/login?status=pending_approval" />;
+  }
+
+  return children;
 };
 
 function AppRoutes() {
+  const { isLoading, session } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-10 w-10 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={session ? <Navigate to="/" /> : <LoginPage />} />
       <Route 
         element={
           <ProtectedRoute>

@@ -1,3 +1,6 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Database } from '@/types/database';
 import {
     Card,
     CardContent,
@@ -19,14 +22,47 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { Loader2 } from 'lucide-react';
 
-const mockUsers = [
-    { id: 'usr_1', email: 'novo.usuario@example.com', requestedAt: '2025-10-27', status: 'Pendente' },
-    { id: 'usr_2', email: 'outro.user@company.com', requestedAt: '2025-10-26', status: 'Pendente' },
-    { id: 'usr_3', email: 'aprovado@test.com', requestedAt: '2025-10-25', status: 'Aprovado' },
-];
+type Profile = Database['public']['Tables']['profiles']['Row'];
 
 export function PerfilPage() {
+    const [users, setUsers] = useState<Profile[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchUsers = async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            toast.error("Falha ao carregar usuários: " + error.message);
+        } else {
+            setUsers(data);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        fetchUsers();
+    }, []);
+
+    const handleApproval = async (userId: string, isApproved: boolean) => {
+        const { error } = await supabase
+            .from('profiles')
+            .update({ is_approved: isApproved })
+            .eq('id', userId);
+        
+        if (error) {
+            toast.error(`Falha ao ${isApproved ? 'aprovar' : 'rejeitar'} usuário.`);
+        } else {
+            toast.success(`Usuário ${isApproved ? 'aprovado' : 'rejeitado'}!`);
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_approved: isApproved } : u));
+        }
+    }
+
     return (
         <div className="grid gap-6">
             <Card>
@@ -35,37 +71,46 @@ export function PerfilPage() {
                     <CardDescription>Aprove ou rejeite o acesso de novos usuários ao sistema.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Data da Solicitação</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Ações</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {mockUsers.map(user => (
-                                <TableRow key={user.id}>
-                                    <TableCell className="font-medium">{user.email}</TableCell>
-                                    <TableCell>{new Date(user.requestedAt).toLocaleDateString('pt-BR')}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={user.status === 'Pendente' ? 'destructive' : 'default'}>
-                                            {user.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        {user.status === 'Pendente' && (
-                                            <div className="flex gap-2 justify-end">
-                                                <Button size="sm" variant="outline" onClick={() => toast.error(`Acesso de ${user.email} rejeitado.`)}>Rejeitar</Button>
-                                                <Button size="sm" onClick={() => toast.success(`Acesso de ${user.email} aprovado!`)}>Aprovar</Button>
-                                            </div>
-                                        )}
-                                    </TableCell>
+                    {loading ? (
+                        <div className="flex items-center justify-center h-40"><Loader2 className="h-8 w-8 animate-spin" /></div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead className="text-right">Ações</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {users.map(user => (
+                                    <TableRow key={user.id}>
+                                        <TableCell className="font-medium">{user.email}</TableCell>
+                                        <TableCell>
+                                            {user.is_admin ? (
+                                                <Badge>Admin</Badge>
+                                            ) : (
+                                                <Badge variant={user.is_approved ? 'default' : 'destructive'}>
+                                                    {user.is_approved ? 'Aprovado' : 'Pendente'}
+                                                </Badge>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            {!user.is_admin && (
+                                                <div className="flex gap-2 justify-end">
+                                                    {user.is_approved ? (
+                                                        <Button size="sm" variant="destructive" onClick={() => handleApproval(user.id, false)}>Rejeitar</Button>
+                                                    ) : (
+                                                        <Button size="sm" onClick={() => handleApproval(user.id, true)}>Aprovar</Button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
 
@@ -82,16 +127,9 @@ export function PerfilPage() {
                         </div>
                         <Switch id="notifications-email" defaultChecked />
                     </div>
-                     <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                            <Label htmlFor="notifications-push">Notificações Push</Label>
-                            <p className="text-sm text-muted-foreground">Receba notificações em tempo real no seu navegador.</p>
-                        </div>
-                        <Switch id="notifications-push" />
-                    </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
-                    <Button>Salvar Preferências</Button>
+                    <Button onClick={() => toast.info('Função em desenvolvimento.')}>Salvar Preferências</Button>
                 </CardFooter>
             </Card>
         </div>

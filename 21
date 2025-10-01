@@ -9,6 +9,7 @@ import {
   Settings,
   Moon,
   Sun,
+  Loader2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -45,8 +46,8 @@ export function SharedLayout() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
 
-  const handleLogout = () => {
-    auth.logout();
+  const handleLogout = async () => {
+    await auth.logout();
     navigate('/login');
   };
 
@@ -72,6 +73,10 @@ export function SharedLayout() {
       </TooltipProvider>
     );
   };
+  
+  if (auth.isLoading) {
+    return <div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
+  }
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-muted/40">
@@ -87,7 +92,7 @@ export function SharedLayout() {
           {navItems.map((item) => (
             <NavLink key={item.to} {...item} />
           ))}
-          {auth.user?.isAdmin && <NavLink {...adminNavItem} />}
+          {auth.user?.is_admin && <NavLink {...adminNavItem} />}
         </nav>
         <nav className="mt-auto flex flex-col items-center gap-4 px-2 sm:py-5">
           <TooltipProvider>
@@ -137,7 +142,7 @@ export function SharedLayout() {
                     {item.label}
                   </Link>
                 ))}
-                {auth.user?.isAdmin && (
+                {auth.user?.is_admin && (
                    <Link
                     to={adminNavItem.to}
                     className={cn(
@@ -180,9 +185,9 @@ export function SharedLayout() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{auth.user?.name || 'Minha Conta'}</DropdownMenuLabel>
+              <DropdownMenuLabel>{auth.user?.email || 'Minha Conta'}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {auth.user?.isAdmin && <DropdownMenuItem onClick={() => navigate('/perfil')}>Perfil</DropdownMenuItem>}
+              {auth.user?.is_admin && <DropdownMenuItem onClick={() => navigate('/perfil')}>Perfil</DropdownMenuItem>}
               <DropdownMenuItem>Configurações</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>

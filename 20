@@ -1,4 +1,8 @@
 import { useState, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { createWorker } from 'tesseract.js';
+
 import {
   Card,
   CardContent,
@@ -15,88 +19,113 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  File,
-  ListFilter,
-  MoreHorizontal,
-  PlusCircle,
-  Upload,
-  Download,
-  FileCheck,
-  FileClock,
-  FileX,
-  Archive,
-  FileText,
-} from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { toast } from 'sonner';
+import { Upload, Archive, FileText, Download, MoreHorizontal, Loader2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Progress } from '@/components/ui/progress';
-import { toast } from 'sonner';
 
-const mockFiles = [
-    { id: 1, originalName: 'nota_fiscal_01.pdf', newName: 'Outubro (26) - Comercio de Maquinas Pirabeiraba Ltda NF 000.040.482 Vlr 123,00 Venc. 13-11-2025.pdf', status: 'Finalizado' },
-    { id: 2, originalName: 'servico_2025.pdf', newName: 'Outubro (26) - Comercio de Maquinas Pirabeiraba Ltda NFS 000040482 Vlr 120,00 Venc. 10-10-2025.pdf', status: 'Finalizado' },
-    { id: 3, originalName: 'nf_sem_venc.pdf', newName: 'Aguardando processamento...', status: 'Pendente' },
-    { id: 4, originalName: 'documento_invalido.pdf', newName: 'Falha ao ler o arquivo', status: 'Erro' },
-];
+type ProcessedFile = {
+    id: string;
+    originalName: string;
+    newName: string;
+    status: 'Processando' | 'Finalizado' | 'Erro';
+    progress: number;
+    data?: any;
+}
 
 export function RenomeadorPage() {
-    const [files, setFiles] = useState(mockFiles);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [isUploading, setIsUploading] = useState(false);
+    const [processedFiles, setProcessedFiles] = useState<ProcessedFile[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFiles = event.target.files;
-        if (selectedFiles && selectedFiles.length > 0) {
-            toast.info(`${selectedFiles.length} arquivo(s) selecionado(s). Iniciando processamento...`);
-            startUploadSimulation();
-        }
-    };
+    const { user } = useAuth();
 
     const handleImportClick = () => {
         fileInputRef.current?.click();
     };
-    
-    const startUploadSimulation = () => {
-        setIsUploading(true);
-        setUploadProgress(0);
+
+    const processFile = async (file: File) => {
+        const fileId = `${file.name}-${Date.now()}`;
         
-        const interval = setInterval(() => {
-            setUploadProgress(prev => {
-                if (prev >= 99) {
-                    clearInterval(interval);
-                    setIsUploading(false);
-                    toast.success('Arquivos importados e processados com sucesso!');
-                    return 100;
-                }
-                return prev + 10;
+        setProcessedFiles(prev => [...prev, { id: fileId, originalName: file.name, newName: 'Aguardando...', status: 'Processando', progress: 0 }]);
+
+        try {
+            const worker = await createWorker('por', 1, {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        const progress = Math.round(m.progress * 100);
+                        setProcessedFiles(prev => prev.map(f => f.id === fileId ? { ...f, progress } : f));
+                    }
+                },
             });
-        }, 200);
+
+            const { data: { text } } = await worker.recognize(file);
+            await worker.terminate();
+
+            // Simple data extraction logic (can be improved)
+            const cnpjMatch = text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+            const numeroNotaMatch = text.match(/(?:N[Ff][-Ee]?|N[Uu][Mm][Ee][Rr][Oo])\s*N?[ºo°]?\.?\s*(\d{1,3}(?:\.\d{3})*(?:-\d{1,2})?|\d{6,9})/);
+            const valorTotalMatch = text.match(/(?:VALOR TOTAL DA NOTA|VALOR TOTAL DOS SERVIÇOS)\s*([\d,.]+)/);
+            
+            const dataEmissaoMatch = text.match(/(\d{2}\/\d{2}\/\d{4})/);
+            const nomeEmitenteMatch = text.match(/^([A-ZÀ-Ú ]+)\n/m); // Very basic
+
+            const extractedData = {
+                cnpj: cnpjMatch ? cnpjMatch[1] : null,
+                numero_nota: numeroNotaMatch ? numeroNotaMatch[1].replace(/\./g, '') : 'N/A',
+                valor_total: valorTotalMatch ? parseFloat(valorTotalMatch[1].replace('.', '').replace(',', '.')) : null,
+                data_emissao: dataEmissaoMatch ? dataEmissaoMatch[1].split('/').reverse().join('-') : null,
+                nome_emitente: nomeEmitenteMatch ? nomeEmitenteMatch[1].trim() : 'Emitente Desconhecido',
+                tipo: text.includes('DANFE') ? 'DANFE' : text.includes('NOTA FISCAL DE SERVIÇOS') ? 'Serviço' : 'Desconhecido',
+            };
+
+            const newName = `${extractedData.nome_emitente} - NF ${extractedData.numero_nota} - R$ ${extractedData.valor_total?.toFixed(2)}.pdf`;
+
+            if (user) {
+                const { error } = await supabase.from('notas_fiscais').insert({
+                    ...extractedData,
+                    user_id: user.id,
+                    arquivo_nome_original: file.name,
+                    arquivo_nome_novo: newName,
+                });
+
+                if (error) throw new Error(error.message);
+            }
+
+            setProcessedFiles(prev => prev.map(f => f.id === fileId ? { ...f, status: 'Finalizado', newName, progress: 100, data: extractedData } : f));
+            toast.success(`Arquivo "${file.name}" processado e salvo.`);
+
+        } catch (error) {
+            console.error(error);
+            setProcessedFiles(prev => prev.map(f => f.id === fileId ? { ...f, status: 'Erro', newName: 'Falha no processamento', progress: 100 } : f));
+            toast.error(`Falha ao processar o arquivo "${file.name}".`);
+        }
     };
 
-    const StatusBadge = ({ status }: { status: string }) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFiles = event.target.files;
+        if (!selectedFiles || selectedFiles.length === 0) return;
+
+        toast.info(`${selectedFiles.length} arquivo(s) na fila de processamento.`);
+        for (const file of Array.from(selectedFiles)) {
+            await processFile(file);
+        }
+    };
+
+    const StatusBadge = ({ status }: { status: ProcessedFile['status'] }) => {
         switch (status) {
             case 'Finalizado':
-                return <span className="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full dark:bg-green-900 dark:text-green-300">Finalizado</span>;
-            case 'Pendente':
-                return <span className="px-2 py-1 text-xs font-medium text-yellow-800 bg-yellow-100 rounded-full dark:bg-yellow-900 dark:text-yellow-300">Pendente</span>;
+                return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Finalizado</Badge>;
+            case 'Processando':
+                return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">Processando</Badge>;
             case 'Erro':
-                return <span className="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full dark:bg-red-900 dark:text-red-300">Erro</span>;
+                return <Badge variant="destructive">Erro</Badge>;
             default:
-                return <span className="px-2 py-1 text-xs font-medium text-gray-800 bg-gray-100 rounded-full dark:bg-gray-700 dark:text-gray-300">{status}</span>;
+                return <Badge variant="outline">{status}</Badge>;
         }
     };
 
@@ -111,140 +140,58 @@ export function RenomeadorPage() {
         multiple
       />
       <div className="grid auto-rows-max items-start gap-4 md:gap-8 lg:col-span-2">
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Finalizados</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">2</div>
-              <p className="text-xs text-muted-foreground">Arquivos processados com sucesso</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Pendentes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">1</div>
-              <p className="text-xs text-muted-foreground">Aguardando na fila de processamento</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Erros</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">1</div>
-              <p className="text-xs text-muted-foreground">Falhas durante o processamento</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">4</div>
-              <p className="text-xs text-muted-foreground">Total de arquivos importados</p>
-            </CardContent>
-          </Card>
-        </div>
-        <Tabs defaultValue="all">
-          <div className="flex items-center">
-            <TabsList>
-              <TabsTrigger value="all">Todos</TabsTrigger>
-              <TabsTrigger value="finalizado">Finalizados</TabsTrigger>
-              <TabsTrigger value="pendente">Pendentes</TabsTrigger>
-              <TabsTrigger value="erro">Com Erro</TabsTrigger>
-            </TabsList>
-            <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => toast.info('Função para baixar todos os arquivos em um ZIP.')}>
-                <Archive className="h-3.5 w-3.5" />
-                <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                  Baixar ZIP
-                </span>
-              </Button>
-              <Button size="sm" className="h-7 gap-1" onClick={handleImportClick}>
-                <Upload className="h-3.5 w-3.5" />
-                <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                  Importar PDF
-                </span>
-              </Button>
-            </div>
-          </div>
-          <TabsContent value="all">
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle>Renomeador de Notas Fiscais</CardTitle>
+            <CardDescription>
+              Importe seus arquivos PDF para extrair os dados, renomear e registrar automaticamente.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button size="lg" className="h-12 gap-2" onClick={handleImportClick}>
+              <Upload className="h-5 w-5" />
+              <span className="text-base">Importar PDF(s)</span>
+            </Button>
+          </CardContent>
+        </Card>
+        
+        {processedFiles.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Arquivos Processados</CardTitle>
+                <CardTitle>Fila de Processamento</CardTitle>
                 <CardDescription>
-                  Gerencie os arquivos de notas fiscais importados.
+                  Acompanhe o status dos arquivos importados.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isUploading && (
-                    <div className="w-full my-4">
-                        <Progress value={uploadProgress} className="w-full" />
-                        <p className="text-sm text-center mt-2 text-muted-foreground">
-                            Processando arquivos... {uploadProgress}%
-                        </p>
-                    </div>
-                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[120px]">Status</TableHead>
                       <TableHead>Nome Original</TableHead>
-                      <TableHead>Novo Nome</TableHead>
-                      <TableHead>
-                        <span className="sr-only">Ações</span>
-                      </TableHead>
+                      <TableHead>Progresso</TableHead>
+                      <TableHead>Novo Nome / Resultado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {files.map((file) => (
+                    {processedFiles.map((file) => (
                       <TableRow key={file.id}>
                         <TableCell>
                             <StatusBadge status={file.status} />
                         </TableCell>
                         <TableCell className="font-medium">{file.originalName}</TableCell>
-                        <TableCell className="text-muted-foreground">{file.newName}</TableCell>
                         <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                aria-haspopup="true"
-                                size="icon"
-                                variant="ghost"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">Toggle menu</span>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuItem disabled={file.status !== 'Finalizado'} onClick={() => toast.success(`Baixando: ${file.newName}`)}>
-                                <Download className="mr-2 h-4 w-4" />
-                                Baixar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <FileText className="mr-2 h-4 w-4" />
-                                Ver Detalhes
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-red-600">
-                                Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            <Progress value={file.progress} className="w-full h-2" />
                         </TableCell>
+                        <TableCell className="text-muted-foreground">{file.newName}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+        )}
+
       </div>
     </>
   );

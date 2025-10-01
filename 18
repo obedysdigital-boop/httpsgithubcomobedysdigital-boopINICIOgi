@@ -1,54 +1,71 @@
-import React, { createContext, useState, useContext, ReactNode } from 'react';
-import { toast } from 'sonner';
+import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Session } from '@supabase/supabase-js';
+import { Database } from '@/types/database';
 
-interface User {
-  name: string;
-  email: string;
-  isAdmin: boolean;
-}
+type UserProfile = Database['public']['Tables']['profiles']['Row'];
 
 interface AuthContextType {
-  isAuthenticated: boolean;
-  user: User | null;
-  login: (email: string, pass: string) => Promise<void>;
-  logout: () => void;
+  session: Session | null;
+  user: UserProfile | null;
+  isLoading: boolean;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = async (email: string, pass: string) => {
-    return new Promise<void>((resolve, reject) => {
-      setTimeout(() => {
-        if (email === 'obedysdigital@gmail.com' && pass === 'junio2019') {
-          setIsAuthenticated(true);
-          setUser({ name: 'Obedys Digital', email: email, isAdmin: true });
-          resolve();
-        } else {
-          // Mocking a regular user login for demonstration
-          if (email.includes('@')) {
-             setIsAuthenticated(true);
-             setUser({ name: 'Usuário Padrão', email: email, isAdmin: false });
-             resolve();
-          } else {
-            toast.error('Credenciais inválidas.');
-            reject(new Error('Credenciais inválidas'));
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSession(session);
+        if (session?.user) {
+          try {
+            const { data: profile, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+            
+            if (error) {
+              console.error("Error fetching profile:", error);
+              setUser(null);
+            } else {
+              setUser(profile);
+            }
+          } catch (e) {
+             console.error("Exception fetching profile:", e);
+             setUser(null);
           }
+        } else {
+          setUser(null);
         }
-      }, 1000);
-    });
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    setUser(null);
+  const value = {
+    session,
+    user,
+    isLoading,
+    logout,
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

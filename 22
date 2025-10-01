@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { Database } from '@/types/database';
+
 import {
   Table,
   TableBody,
@@ -43,7 +47,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from "@/components/ui/calendar"
 import {
   MoreHorizontal,
-  FileDown,
   FileText,
   MessageSquareQuote,
   Trash2,
@@ -51,83 +54,87 @@ import {
   Pencil,
   Calendar as CalendarIcon,
   Download,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 
-type Registro = {
-  id: number;
-  tipo: 'DANFE' | 'Serviço';
-  nome: string;
-  numeroNota: string;
-  natureza: string;
-  cnpj: string;
-  dataEmissao: string;
-  valorTotal: number;
-  pedido?: string;
-  vencimento?: string;
-  cfop?: string;
-  usuario: string;
-  dataRegistro: string;
-  comentario?: string;
+type NotaFiscal = Database['public']['Tables']['notas_fiscais']['Row'] & {
+    profiles: { email: string } | null;
 };
 
-const mockRegistros: Registro[] = [
-  {
-    id: 1,
-    tipo: 'DANFE',
-    nome: 'Comercio de Maquinas Pirabeiraba Ltda',
-    numeroNota: '000.040.482',
-    natureza: 'Venda de mercadoria',
-    cnpj: '12.345.678/0001-99',
-    dataEmissao: '2025-10-26T10:00:00Z',
-    valorTotal: 123.00,
-    vencimento: '2025-11-13',
-    cfop: '5102',
-    usuario: 'admin@renomeador.com',
-    dataRegistro: '2025-10-26T14:00:00Z',
-  },
-  {
-    id: 2,
-    tipo: 'Serviço',
-    nome: 'Consultoria Tech Ltda',
-    numeroNota: '000040482',
-    natureza: '1701 - Análise de sistemas',
-    cnpj: '98.765.432/0001-11',
-    dataEmissao: '2025-10-25T11:30:00Z',
-    valorTotal: 120.00,
-    vencimento: '2025-10-10',
-    usuario: 'user@renomeador.com',
-    dataRegistro: '2025-10-25T15:00:00Z',
-    comentario: 'Serviço de consultoria para o projeto X.'
-  },
-];
-
 export function RelatoriosPage() {
-    const [registros, setRegistros] = useState<Registro[]>(mockRegistros);
-    const [editingRecord, setEditingRecord] = useState<Registro | null>(null);
-    const [commentingRecord, setCommentingRecord] = useState<Registro | null>(null);
-    const [date, setDate] = useState<Date | undefined>(new Date());
+    const [registros, setRegistros] = useState<NotaFiscal[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [editingRecord, setEditingRecord] = useState<NotaFiscal | null>(null);
+    const [commentingRecord, setCommentingRecord] = useState<NotaFiscal | null>(null);
+    const [date, setDate] = useState<Date | undefined>();
 
-    const handleShare = (registro: Registro) => {
-        const message = `🧾 *Resumo da Nota Fiscal* 🧾%0A%0A*Tipo:* ${registro.tipo}%0A*Emitente:* ${registro.nome}%0A*Nº Nota:* ${registro.numeroNota}%0A*Valor:* ${registro.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}%0A*Vencimento:* ${registro.vencimento ? format(new Date(registro.vencimento), 'dd/MM/yyyy') : 'N/A'}%0A%0A*Registrado por:* ${registro.usuario} em ${format(new Date(registro.dataRegistro), 'dd/MM/yyyy HH:mm')}`;
+    const fetchNotas = async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('notas_fiscais')
+            .select(`
+                *,
+                profiles ( email )
+            `)
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            toast.error("Falha ao carregar relatórios: " + error.message);
+        } else {
+            setRegistros(data as NotaFiscal[]);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        fetchNotas();
+    }, []);
+
+    const handleShare = (registro: NotaFiscal) => {
+        const message = `🧾 *Resumo da Nota Fiscal* 🧾%0A%0A*Tipo:* ${registro.tipo}%0A*Emitente:* ${registro.nome_emitente}%0A*Nº Nota:* ${registro.numero_nota}%0A*Valor:* ${registro.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}%0A*Vencimento:* ${registro.vencimento ? format(new Date(registro.vencimento), 'dd/MM/yyyy') : 'N/A'}%0A%0A*Registrado por:* ${registro.profiles?.email} em ${format(new Date(registro.created_at), 'dd/MM/yyyy HH:mm')}`;
         const whatsappUrl = `https://api.whatsapp.com/send?text=${message}`;
         window.open(whatsappUrl, '_blank');
         toast.success('Resumo pronto para ser compartilhado no WhatsApp!');
     };
 
-    const handleSaveComment = (id: number, comentario: string) => {
-        setRegistros(registros.map(r => r.id === id ? { ...r, comentario } : r));
-        setCommentingRecord(null);
-        toast.success('Comentário salvo com sucesso!');
+    const handleSaveComment = async (id: number, comentario: string) => {
+        const { error } = await supabase.from('notas_fiscais').update({ comentario }).eq('id', id);
+        if (error) {
+            toast.error("Falha ao salvar comentário.");
+        } else {
+            fetchNotas(); // Refetch data
+            setCommentingRecord(null);
+            toast.success('Comentário salvo com sucesso!');
+        }
     }
     
-    const handleSaveEdit = (registro: Registro) => {
-        setRegistros(registros.map(r => r.id === registro.id ? registro : r));
-        setEditingRecord(null);
-        toast.success('Registro atualizado com sucesso!');
+    const handleSaveEdit = async (registro: NotaFiscal) => {
+        const { error } = await supabase.from('notas_fiscais').update({ nome_emitente: registro.nome_emitente, valor_total: registro.valor_total }).eq('id', registro.id);
+        if (error) {
+            toast.error("Falha ao atualizar registro.");
+        } else {
+            fetchNotas(); // Refetch data
+            setEditingRecord(null);
+            toast.success('Registro atualizado com sucesso!');
+        }
+    }
+    
+    const handleDelete = async (id: number) => {
+        const { error } = await supabase.from('notas_fiscais').delete().eq('id', id);
+        if (error) {
+            toast.error("Falha ao excluir registro.");
+        } else {
+            setRegistros(prev => prev.filter(r => r.id !== id));
+            toast.success('Registro excluído com sucesso!');
+        }
+    }
+
+    if (loading) {
+        return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
     }
 
     return (
@@ -135,17 +142,11 @@ export function RelatoriosPage() {
             <div className="flex items-center justify-between space-y-2">
                 <h2 className="text-3xl font-bold tracking-tight">Relatórios</h2>
                 <div className="flex items-center space-x-2">
-                    <Button variant="outline" onClick={() => toast.info('Gerando relatório em PDF...')}>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Relatório PDF
+                    <Button variant="outline" onClick={() => toast.info('Função de relatório em PDF em desenvolvimento.')}>
+                        <FileText className="mr-2 h-4 w-4" /> PDF
                     </Button>
-                    <Button variant="outline" onClick={() => toast.info('Gerando relatório em XLS...')}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Relatório XLS
-                    </Button>
-                    <Button variant="outline" onClick={() => toast.info('Gerando resumo para WhatsApp...')}>
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Relatório WhatsApp
+                    <Button variant="outline" onClick={() => toast.info('Função de relatório em XLS em desenvolvimento.')}>
+                        <Download className="mr-2 h-4 w-4" /> XLS
                     </Button>
                 </div>
             </div>
@@ -157,34 +158,24 @@ export function RelatoriosPage() {
                         <PopoverTrigger asChild>
                         <Button
                             variant={"outline"}
-                            className={cn(
-                            "w-[240px] justify-start text-left font-normal",
-                            !date && "text-muted-foreground"
-                            )}
+                            className={cn("w-[240px] justify-start text-left font-normal", !date && "text-muted-foreground")}
                         >
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione a data</span>}
                         </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                            mode="single"
-                            selected={date}
-                            onSelect={setDate}
-                            initialFocus
-                        />
+                        <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                         </PopoverContent>
                     </Popover>
                     <Select>
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Tipo de Nota" />
-                        </SelectTrigger>
+                        <SelectTrigger className="w-[180px]"><SelectValue placeholder="Tipo de Nota" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="danfe">DANFE</SelectItem>
                             <SelectItem value="servico">Serviço</SelectItem>
                         </SelectContent>
                     </Select>
-                     <Button>Filtrar</Button>
+                     <Button onClick={() => toast.info('Função de filtro em desenvolvimento.')}>Filtrar</Button>
                 </div>
 
                 <Table>
@@ -203,34 +194,21 @@ export function RelatoriosPage() {
                         {registros.map((registro) => (
                             <TableRow key={registro.id}>
                                 <TableCell>{registro.tipo}</TableCell>
-                                <TableCell className="font-medium">{registro.nome}</TableCell>
-                                <TableCell>{registro.numeroNota}</TableCell>
-                                <TableCell>{registro.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                <TableCell className="font-medium">{registro.nome_emitente}</TableCell>
+                                <TableCell>{registro.numero_nota}</TableCell>
+                                <TableCell>{registro.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
                                 <TableCell>{registro.vencimento ? format(new Date(registro.vencimento), 'dd/MM/yyyy') : 'N/A'}</TableCell>
-                                <TableCell>{registro.usuario}</TableCell>
+                                <TableCell>{registro.profiles?.email}</TableCell>
                                 <TableCell>
                                     <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                <span className="sr-only">Abrir menu</span>
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
+                                        <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
                                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                                            <DropdownMenuItem onClick={() => setEditingRecord(registro)}>
-                                                <Pencil className="mr-2 h-4 w-4" /> Editar
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => setCommentingRecord(registro)}>
-                                                <MessageSquareQuote className="mr-2 h-4 w-4" /> Comentar
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleShare(registro)}>
-                                                <Share2 className="mr-2 h-4 w-4" /> Compartilhar
-                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setEditingRecord(registro)}><Pencil className="mr-2 h-4 w-4" /> Editar</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setCommentingRecord(registro)}><MessageSquareQuote className="mr-2 h-4 w-4" /> Comentar</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleShare(registro)}><Share2 className="mr-2 h-4 w-4" /> Compartilhar</DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem className="text-red-500" onClick={() => toast.error(`Registro ${registro.id} excluído.`)}>
-                                                <Trash2 className="mr-2 h-4 w-4" /> Excluir
-                                            </DropdownMenuItem>
+                                            <DropdownMenuItem className="text-red-500" onClick={() => handleDelete(registro.id)}><Trash2 className="mr-2 h-4 w-4" /> Excluir</DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </TableCell>
@@ -240,61 +218,40 @@ export function RelatoriosPage() {
                 </Table>
             </div>
 
-            {/* Edit Modal */}
             <Dialog open={!!editingRecord} onOpenChange={(open) => !open && setEditingRecord(null)}>
                 <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                        <DialogTitle>Editar Registro</DialogTitle>
-                        <DialogDescription>
-                            Faça alterações no registro aqui. Clique em salvar quando terminar.
-                        </DialogDescription>
-                    </DialogHeader>
+                    <DialogHeader><DialogTitle>Editar Registro</DialogTitle></DialogHeader>
                     {editingRecord && (
-                        <div className="grid gap-4 py-4">
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="nome" className="text-right">Nome</Label>
-                                <Input id="nome" defaultValue={editingRecord.nome} className="col-span-3" />
+                        <form onSubmit={(e) => { e.preventDefault(); handleSaveEdit(editingRecord); }}>
+                            <div className="grid gap-4 py-4">
+                                <Label htmlFor="nome">Nome</Label>
+                                <Input id="nome" value={editingRecord.nome_emitente || ''} onChange={(e) => setEditingRecord({...editingRecord, nome_emitente: e.target.value})} />
+                                <Label htmlFor="valor">Valor</Label>
+                                <Input id="valor" type="number" value={editingRecord.valor_total || ''} onChange={(e) => setEditingRecord({...editingRecord, valor_total: parseFloat(e.target.value)})} />
                             </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="valor" className="text-right">Valor</Label>
-                                <Input id="valor" type="number" defaultValue={editingRecord.valorTotal} className="col-span-3" />
-                            </div>
-                        </div>
+                            <DialogFooter>
+                                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                                <Button type="submit">Salvar Alterações</Button>
+                            </DialogFooter>
+                        </form>
                     )}
-                    <DialogFooter>
-                        <DialogClose asChild>
-                            <Button variant="outline">Cancelar</Button>
-                        </DialogClose>
-                        <Button onClick={() => editingRecord && handleSaveEdit(editingRecord)}>Salvar Alterações</Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* Comment Modal */}
             <Dialog open={!!commentingRecord} onOpenChange={(open) => !open && setCommentingRecord(null)}>
                 <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                        <DialogTitle>Adicionar Comentário</DialogTitle>
-                        <DialogDescription>
-                            Adicione uma observação para o registro de {commentingRecord?.nome}.
-                        </DialogDescription>
-                    </DialogHeader>
+                    <DialogHeader><DialogTitle>Adicionar Comentário</DialogTitle></DialogHeader>
                     {commentingRecord && (
-                        <div className="grid gap-4 py-4">
-                            <Textarea
-                                id="comentario"
-                                placeholder="Digite seu comentário aqui..."
-                                defaultValue={commentingRecord.comentario}
-                                className="col-span-4"
-                            />
-                        </div>
+                        <form onSubmit={(e) => { e.preventDefault(); handleSaveComment(commentingRecord.id, (document.getElementById('comentario') as HTMLTextAreaElement).value); }}>
+                            <div className="grid gap-4 py-4">
+                                <Textarea id="comentario" placeholder="Digite seu comentário..." defaultValue={commentingRecord.comentario || ''} />
+                            </div>
+                            <DialogFooter>
+                                <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                                <Button type="submit">Salvar Comentário</Button>
+                            </DialogFooter>
+                        </form>
                     )}
-                    <DialogFooter>
-                         <DialogClose asChild>
-                            <Button variant="outline">Cancelar</Button>
-                        </DialogClose>
-                        <Button onClick={() => commentingRecord && handleSaveComment(commentingRecord.id, (document.getElementById('comentario') as HTMLTextAreaElement).value)}>Salvar Comentário</Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

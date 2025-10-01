@@ -1,0 +1,111 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export interface Database {
+  public: {
+    Tables: {
+      notas_fiscais: {
+        Row: {
+          id: number
+          created_at: string
+          user_id: string
+          tipo: 'DANFE' | 'Serviço' | 'Desconhecido'
+          nome_emitente: string | null
+          numero_nota: string | null
+          natureza_operacao: string | null
+          cnpj: string | null
+          data_emissao: string | null
+          valor_total: number | null
+          pedido: string | null
+          vencimento: string | null
+          cfop: string | null
+          comentario: string | null
+          arquivo_nome_original: string
+          arquivo_nome_novo: string
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          user_id: string
+          tipo?: 'DANFE' | 'Serviço' | 'Desconhecido'
+          nome_emitente?: string | null
+          numero_nota?: string | null
+          natureza_operacao?: string | null
+          cnpj?: string | null
+          data_emissao?: string | null
+          valor_total?: number | null
+          pedido?: string | null
+          vencimento?: string | null
+          cfop?: string | null
+          comentario?: string | null
+          arquivo_nome_original: string
+          arquivo_nome_novo: string
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          user_id?: string
+          tipo?: 'DANFE' | 'Serviço' | 'Desconhecido'
+          nome_emitente?: string | null
+          numero_nota?: string | null
+          natureza_operacao?: string | null
+          cnpj?: string | null
+          data_emissao?: string | null
+          valor_total?: number | null
+          pedido?: string | null
+          vencimento?: string | null
+          cfop?: string | null
+          comentario?: string | null
+          arquivo_nome_original?: string
+          arquivo_nome_novo?: string
+        }
+      }
+      profiles: {
+        Row: {
+          id: string
+          updated_at: string | null
+          email: string
+          full_name: string | null
+          is_admin: boolean
+          is_approved: boolean
+        }
+        Insert: {
+          id: string
+          updated_at?: string | null
+          email: string
+          full_name?: string | null
+          is_admin?: boolean
+          is_approved?: boolean
+        }
+        Update: {
+          id?: string
+          updated_at?: string | null
+          email?: string
+          full_name?: string | null
+          is_admin?: boolean
+          is_approved?: boolean
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      set_admin_user: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
